@@ -1,0 +1,34 @@
+# 토큰 파일들 (보안상 중요)
+tokens/*.txt
+tokens/*.yaml
+tokens/*.yml
+
+# 백업 파일들
+backups/*.bak
+
+# 로그 파일들
+*.log
+
+# 임시 파일들
+*.tmp
+*.temp
+*~
+
+# 운영체제 관련
+.DS_Store
+Thumbs.db
+
+# IDE 관련
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 환경 설정 파일
+.env
+.env.local
+.env.*.local
+
+# 실행 중 생성되는 파일들
+*.pid
+*.lock
