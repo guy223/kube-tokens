@@ -60,7 +60,7 @@ ls -la ~/.kube/config
 
 #### 저장소 클론
 ```bash
-git clone <repository-url>
+git clone https://github.com/guy223/kube-tokens.git
 cd kube-tokens
 ```
 
@@ -204,6 +204,12 @@ WARN: kube config에서 user를 찾을 수 없습니다: cluster-name
 모든 config 변경 전에 백업이 생성됩니다:
 - 위치: `backups/config_YYYYMMDD_HHMMSS.bak`
 - 복원: `cp backups/config_20231201_123456.bak ~/.kube/config`
+
+## 저장소 정보
+
+- **GitHub 저장소**: https://github.com/guy223/kube-tokens
+- **클론 URL (HTTPS)**: `https://github.com/guy223/kube-tokens.git`
+- **클론 URL (SSH)**: `git@github.com:guy223/kube-tokens.git`
 
 ## 기여하기
 
