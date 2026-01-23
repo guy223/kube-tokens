@@ -233,11 +233,19 @@ process_tokens() {
             if [[ "$DRY_RUN" == "false" ]]; then
                 if rm "$token_file" 2>/dev/null; then
                     log_success "토큰 파일 삭제: $filename"
+                    # Zone.Identifier 파일도 삭제 (Windows에서 복사 시 생성되는 메타데이터)
+                    local zone_file="${token_file}:Zone.Identifier"
+                    if [[ -f "$zone_file" ]]; then
+                        rm "$zone_file" 2>/dev/null && log_info "Zone 파일 삭제: ${filename}:Zone.Identifier"
+                    fi
                 else
                     log_warn "토큰 파일 삭제 실패: $filename"
                 fi
             else
                 log_info "Dry-run: 토큰 파일을 삭제할 예정: $filename"
+                if [[ -f "${token_file}:Zone.Identifier" ]]; then
+                    log_info "Dry-run: Zone 파일도 삭제할 예정: ${filename}:Zone.Identifier"
+                fi
             fi
         else
             ((skipped = skipped + 1))
