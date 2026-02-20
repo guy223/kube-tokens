@@ -18,6 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOKENS_DIR="${SCRIPT_DIR}/tokens"
 KUBE_CONFIG="${HOME}/.kube/config"
 BACKUP_DIR="${SCRIPT_DIR}/backups"
+KUBE_CONFIG_CREATED=false
 
 # 함수: 사용법 출력
 usage() {
@@ -71,8 +72,20 @@ check_prerequisites() {
     fi
 
     if [[ ! -f "$KUBE_CONFIG" ]]; then
-        log_error "kubectl config 파일을 찾을 수 없습니다: $KUBE_CONFIG"
-        exit 1
+        log_warn "kubectl config 파일이 없습니다. 새로 생성합니다: $KUBE_CONFIG"
+        mkdir -p "$(dirname "$KUBE_CONFIG")"
+        cat > "$KUBE_CONFIG" << 'KUBEEOF'
+apiVersion: v1
+clusters: []
+contexts: []
+current-context: ""
+kind: Config
+preferences: {}
+users: []
+KUBEEOF
+        chmod 600 "$KUBE_CONFIG"
+        KUBE_CONFIG_CREATED=true
+        log_success "새 kubeconfig 생성: $KUBE_CONFIG"
     fi
 
     # 백업 디렉토리 생성
@@ -81,9 +94,14 @@ check_prerequisites() {
 
 # 함수: 백업 생성
 create_backup() {
+    if [[ "$KUBE_CONFIG_CREATED" == "true" ]]; then
+        log_info "새로 생성된 config 파일이므로 백업을 건너뜁니다"
+        return 0
+    fi
+
     local timestamp=$(date +"%Y%m%d_%H%M%S")
     local backup_file="${BACKUP_DIR}/config_${timestamp}.bak"
-    
+
     if [[ "$DRY_RUN" == "false" ]]; then
         cp "$KUBE_CONFIG" "$backup_file"
         log_success "백업 생성: $backup_file"
@@ -106,6 +124,42 @@ extract_token_from_file() {
     fi
     
     echo "$token"
+}
+
+# 함수: 토큰 파일에서 cluster name 추출
+extract_cluster_name_from_file() {
+    local token_file="$1"
+    local name
+    name=$(yq eval '.clusters[0].name' "$token_file" 2>/dev/null || echo "")
+    if [[ -z "$name" || "$name" == "null" ]]; then
+        echo ""
+        return 1
+    fi
+    echo "$name"
+}
+
+# 함수: 토큰 파일에서 server URL 추출
+extract_server_from_file() {
+    local token_file="$1"
+    yq eval '.clusters[0].cluster.server' "$token_file" 2>/dev/null || echo ""
+}
+
+# 함수: 토큰 파일에서 CA data 추출
+extract_ca_data_from_file() {
+    local token_file="$1"
+    yq eval '.clusters[0].cluster."certificate-authority-data"' "$token_file" 2>/dev/null || echo ""
+}
+
+# 함수: 토큰 파일에서 user name 추출
+extract_user_name_from_file() {
+    local token_file="$1"
+    yq eval '.users[0].name' "$token_file" 2>/dev/null || echo ""
+}
+
+# 함수: 토큰 파일에서 context name 추출
+extract_context_name_from_file() {
+    local token_file="$1"
+    yq eval '.contexts[0].name' "$token_file" 2>/dev/null || echo ""
 }
 
 # 함수: kube config에서 user 토큰 업데이트
@@ -184,52 +238,188 @@ user_exists() {
     fi
 }
 
+# 함수: kube config에 cluster가 존재하는지 확인
+cluster_exists() {
+    local cluster_name="$1"
+    local exists
+    exists=$(yq eval ".clusters[] | select(.name == \"$cluster_name\") | .name" "$KUBE_CONFIG" 2>/dev/null || echo "")
+    [[ -n "$exists" ]]
+}
+
+# 함수: kube config에 context가 존재하는지 확인
+context_exists() {
+    local context_name="$1"
+    local exists
+    exists=$(yq eval ".contexts[] | select(.name == \"$context_name\") | .name" "$KUBE_CONFIG" 2>/dev/null || echo "")
+    [[ -n "$exists" ]]
+}
+
+# 함수: kube config에 cluster 항목 추가
+add_cluster_to_config() {
+    local cluster_name="$1"
+    local server="$2"
+    local ca_data="$3"
+
+    CLUSTER_NAME="$cluster_name" SERVER_URL="$server" CA_DATA="$ca_data" \
+    yq eval '.clusters += [{"cluster": {"certificate-authority-data": strenv(CA_DATA), "server": strenv(SERVER_URL)}, "name": strenv(CLUSTER_NAME)}]' -i "$KUBE_CONFIG"
+
+    if [[ $? -eq 0 ]]; then
+        log_success "cluster 항목 추가: $cluster_name"
+        return 0
+    else
+        log_error "cluster 항목 추가 실패: $cluster_name"
+        return 1
+    fi
+}
+
+# 함수: kube config에 context 항목 추가
+add_context_to_config() {
+    local context_name="$1"
+    local cluster_name="$2"
+    local user_name="$3"
+
+    CONTEXT_NAME="$context_name" CLUSTER_NAME="$cluster_name" USER_NAME="$user_name" \
+    yq eval '.contexts += [{"context": {"cluster": strenv(CLUSTER_NAME), "user": strenv(USER_NAME)}, "name": strenv(CONTEXT_NAME)}]' -i "$KUBE_CONFIG"
+
+    if [[ $? -eq 0 ]]; then
+        log_success "context 항목 추가: $context_name"
+        return 0
+    else
+        log_error "context 항목 추가 실패: $context_name"
+        return 1
+    fi
+}
+
+# 함수: kube config에 user 항목 추가
+add_user_to_config() {
+    local user_name="$1"
+    local token="$2"
+
+    USER_NAME="$user_name" TOKEN="$token" \
+    yq eval '.users += [{"name": strenv(USER_NAME), "user": {"token": strenv(TOKEN)}}]' -i "$KUBE_CONFIG"
+
+    if [[ $? -eq 0 ]]; then
+        log_success "user 항목 추가: $user_name"
+        return 0
+    else
+        log_error "user 항목 추가 실패: $user_name"
+        return 1
+    fi
+}
+
 # 함수: 메인 처리
 process_tokens() {
     local token_files=("$TOKENS_DIR"/*.txt)
     local processed=0
     local updated=0
     local skipped=0
-    
+
     if [[ ! -e "${token_files[0]}" ]]; then
         log_warn "tokens 디렉토리에 .txt 파일이 없습니다"
         return 0
     fi
-    
+
     log_info "토큰 업데이트를 시작합니다..."
     echo
-    
+
     for token_file in "${token_files[@]}"; do
         if [[ ! -f "$token_file" ]]; then
             continue
         fi
-        
+
         # 파일명에서 클러스터 이름 추출 (.txt 확장자 제거)
         local filename=$(basename "$token_file")
         local base_filename="${filename%.txt}"
-        local cluster_name=$(get_context_name "$base_filename")
-        
+
+        # 파일 내부에서 cluster name 추출 (우선), 없으면 파일명 패턴으로 폴백
+        local cluster_name
+        if ! cluster_name=$(extract_cluster_name_from_file "$token_file") || [[ -z "$cluster_name" || "$cluster_name" == "null" ]]; then
+            cluster_name=$(get_context_name "$base_filename")
+        fi
+
+        local user_name
+        user_name=$(extract_user_name_from_file "$token_file")
+        if [[ -z "$user_name" || "$user_name" == "null" ]]; then
+            user_name="$cluster_name"
+        fi
+
+        local context_name
+        context_name=$(extract_context_name_from_file "$token_file")
+        if [[ -z "$context_name" || "$context_name" == "null" ]]; then
+            context_name="$cluster_name"
+        fi
+
         log_info "처리 중: $base_filename -> $cluster_name"
-        
+
         # 토큰 추출
         local new_token
         if ! new_token=$(extract_token_from_file "$token_file"); then
             ((skipped = skipped + 1))
+            ((processed = processed + 1))
+            echo
             continue
         fi
-        
-        # kube config에서 해당 user 확인
-        if ! user_exists "$cluster_name"; then
-            log_warn "kube config에서 user를 찾을 수 없습니다: $cluster_name"
-            ((skipped = skipped + 1))
-            continue
+
+        # cluster/context/user 존재 여부 확인
+        local has_cluster has_context has_user
+        cluster_exists "$cluster_name" && has_cluster=true || has_cluster=false
+        context_exists "$context_name" && has_context=true || has_context=false
+        user_exists    "$user_name"    && has_user=true    || has_user=false
+
+        local op_success=false
+
+        if [[ "$has_cluster" == "true" && "$has_context" == "true" && "$has_user" == "true" ]]; then
+            # 모두 존재: 토큰만 업데이트
+            log_info "$cluster_name: 기존 항목 발견 → 토큰만 업데이트"
+            if [[ "$DRY_RUN" == "true" ]]; then
+                log_info "Dry-run: $user_name의 토큰을 업데이트할 예정"
+                op_success=true
+            elif update_user_token "$user_name" "$new_token"; then
+                op_success=true
+            fi
+        else
+            # 빠진 항목 추가
+            log_info "$cluster_name: 새 항목 추가 (cluster=$has_cluster, context=$has_context, user=$has_user)"
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+                [[ "$has_cluster" == "false" ]] && log_info "Dry-run: cluster 항목을 추가할 예정: $cluster_name"
+                [[ "$has_context" == "false" ]] && log_info "Dry-run: context 항목을 추가할 예정: $context_name"
+                [[ "$has_user"    == "false" ]] && log_info "Dry-run: user 항목을 추가할 예정: $user_name"
+                log_info "Dry-run: $user_name의 토큰을 설정할 예정"
+                op_success=true
+            else
+                local add_failed=false
+
+                if [[ "$has_cluster" == "false" ]]; then
+                    local server ca_data
+                    server=$(extract_server_from_file "$token_file")
+                    ca_data=$(extract_ca_data_from_file "$token_file")
+                    if [[ -z "$server" || "$server" == "null" || -z "$ca_data" || "$ca_data" == "null" ]]; then
+                        log_error "토큰 파일에서 cluster 정보(server/CA)를 찾을 수 없습니다: $filename"
+                        add_failed=true
+                    else
+                        add_cluster_to_config "$cluster_name" "$server" "$ca_data" || add_failed=true
+                    fi
+                fi
+
+                if [[ "$has_context" == "false" && "$add_failed" == "false" ]]; then
+                    add_context_to_config "$context_name" "$cluster_name" "$user_name" || add_failed=true
+                fi
+
+                if [[ "$add_failed" == "false" ]]; then
+                    if [[ "$has_user" == "false" ]]; then
+                        add_user_to_config "$user_name" "$new_token" && op_success=true
+                    else
+                        update_user_token "$user_name" "$new_token" && op_success=true
+                    fi
+                fi
+            fi
         fi
-        
-        # 토큰 업데이트
-        if update_user_token "$cluster_name" "$new_token"; then
+
+        if [[ "$op_success" == "true" ]]; then
             ((updated = updated + 1))
-            
-            # 토큰 업데이트 성공 시 파일 삭제
+
+            # 성공 시 토큰 파일 삭제
             if [[ "$DRY_RUN" == "false" ]]; then
                 if rm "$token_file" 2>/dev/null; then
                     log_success "토큰 파일 삭제: $filename"
@@ -250,11 +440,11 @@ process_tokens() {
         else
             ((skipped = skipped + 1))
         fi
-        
+
         ((processed = processed + 1))
         echo
     done
-    
+
     # 결과 요약
     echo "========================================"
     log_info "처리 완료!"

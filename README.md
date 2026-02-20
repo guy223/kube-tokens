@@ -5,7 +5,9 @@ Kubernetes 클러스터 토큰을 자동으로 업데이트하는 스크립트�
 ## 기능
 
 - 자동 토큰 업데이트: tokens/ 폴더의 .txt 파일을 읽어 kube config 업데이트
-- 자동 백업: 업데이트 전 기존 config 파일 백업
+- **새 클러스터 자동 추가**: 토큰 파일에 해당하는 cluster/context/user가 없으면 자동으로 추가
+- **config 파일 자동 생성**: `~/.kube/config`가 없으면 빈 kubeconfig를 새로 생성
+- 자동 백업: 업데이트 전 기존 config 파일 백업 (새로 생성된 파일은 백업 건너뜀)
 - Dry-run 모드: 실제 변경 없이 미리보기 가능
 - 안전한 파일 처리: 업데이트 완료 후 토큰 파일 자동 삭제
 - 컬러 로그: 직관적인 상태 표시
@@ -82,20 +84,34 @@ chmod +x update-kube-tokens.sh
 
 ### 3. 토큰 파일 준비
 
-`tokens/` 폴더에 클러스터별 토큰 파일을 배치합니다. 파일명은 다음 패턴을 따라야 합니다:
+`tokens/` 폴더에 클러스터별 토큰 파일을 배치합니다.
 
-```
-tokens/
-├── niffler2-dev-apse1-k6-cluster.txt
-├── aws-niffler2-dev-apse1-db-cluster.txt
-├── aws-niffler2-dev-apse1-app-cluster.txt
-├── niffler2-stg-apse1-db-cluster.txt
-├── niffler2-prod-apse1-db-cluster.txt
-└── ...
+#### 토큰 파일 형식 (권장)
+완전한 kubeconfig 형식을 사용하면 새 클러스터도 자동으로 추가됩니다:
+
+```yaml
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: LS0tLS1CRUdJTi...
+    server: https://xxx.eks.ap-southeast-1.samsungspc.cloud
+  name: cluster-name
+contexts:
+- context:
+    cluster: cluster-name
+    user: cluster-name
+  name: cluster-name
+current-context: cluster-name
+kind: Config
+preferences: {}
+users:
+- name: cluster-name
+  user:
+    token: eyJhbGciOiJSUzI1NiIsImtpZCI6Il...
 ```
 
-#### 토큰 파일 형식
-각 토큰 파일은 다음과 같은 YAML 형식이어야 합니다:
+#### 토큰 파일 형식 (최소)
+기존 클러스터의 토큰만 업데이트하는 경우 users 섹션만 있어도 됩니다:
 
 ```yaml
 users:
@@ -125,13 +141,13 @@ users:
 
 ## 작동 원리
 
-1. **사전 검사**: yq 설치 및 필수 파일/디렉토리 확인
-2. **백업 생성**: 현재 kube config를 `backups/` 폴더에 백업
-3. **토큰 처리**:
-   - `tokens/` 폴더의 모든 .txt 파일 스캔
-   - 파일명을 기반으로 클러스터명 매핑
-   - YAML에서 토큰 추출
-   - kube config의 해당 사용자 토큰 업데이트
+1. **사전 검사**: yq 설치 및 필수 디렉토리 확인
+   - `~/.kube/config`가 없으면 빈 kubeconfig 파일 자동 생성
+2. **백업 생성**: 현재 kube config를 `backups/` 폴더에 백업 (새로 생성된 파일은 건너뜀)
+3. **토큰 처리**: `tokens/` 폴더의 모든 .txt 파일에 대해:
+   - 파일 내부에서 cluster/user/context 이름 추출 (없으면 파일명 패턴으로 폴백)
+   - cluster/context/user 모두 존재: **토큰만 업데이트**
+   - 항목이 없는 경우: **cluster/context/user 자동 추가 후 토큰 설정**
    - 성공 시 토큰 파일 삭제
 4. **결과 보고**: 처리된 파일 수, 업데이트 성공/실패 통계
 
@@ -186,11 +202,11 @@ WARN: 토큰을 찾을 수 없습니다: tokens/cluster.txt
 ```
 **해결방법**: 토큰 파일이 올바른 YAML 형식인지 확인
 
-#### 사용자 없음 오류
+#### cluster 정보 없음 오류
 ```
-WARN: kube config에서 user를 찾을 수 없습니다: cluster-name
+ERROR: 토큰 파일에서 cluster 정보(server/CA)를 찾을 수 없습니다: cluster.txt
 ```
-**해결방법**: kube config에 해당 클러스터가 등록되어 있는지 확인
+**해결방법**: 새 클러스터 추가 시 완전한 kubeconfig 형식의 토큰 파일 사용 (위의 권장 형식 참조)
 
 ### 로그 레벨
 
