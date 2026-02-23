@@ -151,41 +151,6 @@ users:
    - 성공 시 토큰 파일 삭제
 4. **결과 보고**: 처리된 파일 수, 업데이트 성공/실패 통계
 
-## 지원하는 클러스터
-
-| 파일명 패턴 | 매핑되는 클러스터명 | 환경 |
-|------------|-------------------|------|
-| `niffler2-dev-apse1-k6*` | niffler2-dev-apse1-k6-cluster | 개발 |
-| `aws-niffler2-dev-apse1-db*` | aws-niffler2-dev-apse1-db-cluster | 개발 |
-| `aws-niffler2-dev-apse1-app*` | aws-niffler2-dev-apse1-app-cluster | 개발 |
-| `aws-niffler2-dev-apse1-sandbox*` | aws-niffler2-dev-apse1-sandbox-cluster | 샌드박스 |
-| `niffler2-stg-apse1-db*` | niffler2-stg-apse1-db-cluster | 스테이징 |
-| `niffler2-stg-apse1-app*` | niffler2-stg-apse1-app-cluster | 스테이징 |
-| `niffler2-prod-apse1-db*` | niffler2-prod-apse1-db-cluster | 프로덕션 (AP) |
-| `niffler2-prod-use1-db*` | niffler2-prod-use1-db-cluster | 프로덕션 (US) |
-| `niffler2-prod-euc1-db*` | niffler2-prod-euc1-db-cluster | 프로덕션 (EU) |
-
-## 컨텍스트 전환 Aliases
-
-편의를 위해 다음 aliases를 `~/.bashrc` 또는 `~/.zshrc`에 추가할 수 있습니다:
-
-```bash
-# 개발 환경
-alias k6="kubectl config use-context niffler2-dev-apse1-k6-cluster"
-alias dev="kubectl config use-context aws-niffler2-dev-apse1-db-cluster"  
-alias app-dev="kubectl config use-context aws-niffler2-dev-apse1-app-cluster"
-alias sd="kubectl config use-context aws-niffler2-dev-apse1-sandbox-cluster"
-
-# 스테이징 환경
-alias stg="kubectl config use-context niffler2-stg-apse1-db-cluster"
-alias app-stg="kubectl config use-context niffler2-stg-apse1-app-cluster"
-
-# 프로덕션 환경
-alias prod="kubectl config use-context niffler2-prod-apse1-db-cluster"
-alias usprod="kubectl config use-context niffler2-prod-use1-db-cluster"
-alias euprod="kubectl config use-context niffler2-prod-euc1-db-cluster"
-```
-
 ## 트러블슈팅
 
 ### 일반적인 문제
