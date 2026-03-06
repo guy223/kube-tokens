@@ -94,7 +94,7 @@ apiVersion: v1
 clusters:
 - cluster:
     certificate-authority-data: LS0tLS1CRUdJTi...
-    server: https://xxx.eks.ap-southeast-1.samsungspc.cloud
+    server: https://xxx.eks.ap-southeast-1.example.com
   name: cluster-name
 contexts:
 - context:
