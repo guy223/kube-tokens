@@ -335,6 +335,19 @@ process_tokens() {
         local cluster_name
         if ! cluster_name=$(extract_cluster_name_from_file "$token_file") || [[ -z "$cluster_name" || "$cluster_name" == "null" ]]; then
             cluster_name=$(get_context_name "$base_filename")
+        else
+            # 파일명 패턴으로 예상되는 이름과 파일 내부에 기록된 이름이 다르면
+            # 잘못된 라벨링(예: euc1-db 파일인데 내부에 ecu1-app로 기록)일 수 있으므로 건너뜀
+            local expected_name
+            expected_name=$(get_context_name "$base_filename")
+            if [[ "$expected_name" != "$base_filename" && "$expected_name" != "$cluster_name" ]]; then
+                log_error "이름 불일치 감지: $filename (파일명 기준 예상 이름: $expected_name, 파일 내부 이름: $cluster_name)"
+                log_warn "잘못된 클러스터에 토큰이 등록되는 것을 방지하기 위해 이 파일을 건너뜁니다. 파일 내용을 직접 확인하세요."
+                ((skipped = skipped + 1))
+                ((processed = processed + 1))
+                echo
+                continue
+            fi
         fi
 
         local user_name
